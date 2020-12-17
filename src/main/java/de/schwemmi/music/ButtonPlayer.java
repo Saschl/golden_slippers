@@ -18,6 +18,8 @@ import org.springframework.stereotype.Component;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.IOException;
+import java.util.Random;
+import java.util.UUID;
 
 @Component
 public class ButtonPlayer {
@@ -26,32 +28,9 @@ public class ButtonPlayer {
     private Boolean shouldSearch;
 
     private FlicClient client;
-    private NewDiscoveryClient connectionClient;
-    private SchlusibengPlayer player;
-
-    private ButtonConnectionChannel.Callbacks buttonCallbacks = new ButtonConnectionChannel.Callbacks() {
-        @Override
-        public void onCreateConnectionChannelResponse(ButtonConnectionChannel channel, CreateConnectionChannelError createConnectionChannelError, ConnectionStatus connectionStatus) {
-            System.out.println("Create response " + channel.getBdaddr() + ": " + createConnectionChannelError + ", " + connectionStatus);
-        }
-
-        @Override
-        public void onRemoved(ButtonConnectionChannel channel, RemovedReason removedReason) {
-            System.out.println("Channel removed for " + channel.getBdaddr() + ": " + removedReason);
-        }
-
-        @Override
-        public void onConnectionStatusChanged(ButtonConnectionChannel channel, ConnectionStatus connectionStatus, DisconnectReason disconnectReason) {
-            System.out.println("New status for " + channel.getBdaddr() + ": " + connectionStatus + (connectionStatus == ConnectionStatus.Disconnected ? ", " + disconnectReason : ""));
-        }
-
-        @Override
-        public void onButtonUpOrDown(ButtonConnectionChannel channel, ClickType clickType, boolean wasQueued, int timeDiff) throws IOException {
-           if(clickType.equals(clickType.ButtonDown) && player.isPlayCompleted()) {
-               player.play("/home/pi/slippers.wav");
-           }
-        }
-    };
+    private final NewDiscoveryClient connectionClient;
+    private final SchlusibengPlayer player;
+    private final Random slipperRandom;
 
     public ButtonPlayer(NewDiscoveryClient connectionClient, SchlusibengPlayer player) {
         this.connectionClient = connectionClient;
@@ -61,6 +40,7 @@ public class ButtonPlayer {
         } catch (IOException e) {
             e.printStackTrace();
         }
+        this.slipperRandom = new Random();
 
     }
 
@@ -97,9 +77,8 @@ public class ButtonPlayer {
     @PostConstruct
     public void startListening() {
         try {
-            if(shouldSearch != null && shouldSearch) {
+            if (shouldSearch != null && shouldSearch) {
                 connectionClient.discover();
-
             }
             this.startActions();
         } catch (IOException e) {
@@ -118,6 +97,31 @@ public class ButtonPlayer {
         }
     }
 
+
+    private final ButtonConnectionChannel.Callbacks buttonCallbacks = new ButtonConnectionChannel.Callbacks() {
+        @Override
+        public void onCreateConnectionChannelResponse(ButtonConnectionChannel channel, CreateConnectionChannelError createConnectionChannelError, ConnectionStatus connectionStatus) {
+            System.out.println("Create response " + channel.getBdaddr() + ": " + createConnectionChannelError + ", " + connectionStatus);
+        }
+
+        @Override
+        public void onRemoved(ButtonConnectionChannel channel, RemovedReason removedReason) {
+            System.out.println("Channel removed for " + channel.getBdaddr() + ": " + removedReason);
+        }
+
+        @Override
+        public void onConnectionStatusChanged(ButtonConnectionChannel channel, ConnectionStatus connectionStatus, DisconnectReason disconnectReason) {
+            System.out.println("New status for " + channel.getBdaddr() + ": " + connectionStatus + (connectionStatus == ConnectionStatus.Disconnected ? ", " + disconnectReason : ""));
+        }
+
+        @Override
+        public void onButtonUpOrDown(ButtonConnectionChannel channel, ClickType clickType, boolean wasQueued, int timeDiff) {
+            if (clickType.equals(ClickType.ButtonDown) && player.isPlayCompleted()) {
+                int nextSlipper = slipperRandom.nextInt(2);
+                player.play("/home/pi/slippers_"+nextSlipper+".wav");
+            }
+        }
+    };
 
 
 }

@@ -1,11 +1,14 @@
 package de.schwemmi.music;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import javax.annotation.PreDestroy;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
@@ -21,6 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
 public class SchlusibengPlayer implements LineListener {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SchlusibengPlayer.class);
 
     /**
      * this flag indicates whether the playback completes or not.
@@ -44,39 +49,43 @@ public class SchlusibengPlayer implements LineListener {
             new ProcessBuilder( "/bin/bash","-c","sudo systemctl stop shairport-sync" ).start();
 
             AudioInputStream audioStream = AudioSystem.getAudioInputStream(audioFile);
-
             AudioFormat format = audioStream.getFormat();
-
             DataLine.Info info = new DataLine.Info(Clip.class, format);
 
             audioClip = (Clip) AudioSystem.getLine(info);
-
-
-
             audioClip.addLineListener(this);
-
             audioClip.open(audioStream);
-
             audioClip.start();
 
         } catch (UnsupportedAudioFileException ex) {
-            System.out.println("The specified audio file is not supported.");
+            LOG.error("The specified audio file is not supported.",ex);
             ex.printStackTrace();
             audioClip.stop();
-            this.playCompleted.set(true);
+            this.playCompleted.compareAndSet(false, true);
         } catch (LineUnavailableException ex) {
-            System.out.println("Audio line for playing back is unavailable.");
+            LOG.error("Audio line for playing back is unavailable.",ex);
             ex.printStackTrace();
             audioClip.stop();
-            this.playCompleted.set(true);
+            this.playCompleted.compareAndSet(false, true);
         } catch (IOException ex) {
-            System.out.println("Error playing the audio file.");
-            ex.printStackTrace();
+            LOG.error("Error playing the audio file.",ex);
             audioClip.stop();
-            this.playCompleted.set(true);
+            this.playCompleted.compareAndSet(false, true);
         }
 
     }
+
+    @PreDestroy
+    public void turnOnAudioAgain() {
+        try {
+            new ProcessBuilder( "/bin/bash","-c","sudo systemctl start bluealsa-aplay" ).start();
+            new ProcessBuilder( "/bin/bash","-c","sudo systemctl start shairport-sync" ).start();
+        } catch (IOException ex) {
+            LOG.error("Could no restart audio services", ex);
+        }
+
+    }
+
 
     /**
      * Listens to the START and STOP events of the audio line.
@@ -86,7 +95,7 @@ public class SchlusibengPlayer implements LineListener {
         LineEvent.Type type = event.getType();
 
         if (type == LineEvent.Type.START) {
-            System.out.println("Playback started.");
+            LOG.info("Playback started.");
 
         } else if (type == LineEvent.Type.STOP) {
             audioClip.close();
@@ -94,13 +103,13 @@ public class SchlusibengPlayer implements LineListener {
                 new ProcessBuilder( "/bin/bash","-c","sudo systemctl start bluealsa-aplay" ).start();
                 new ProcessBuilder( "/bin/bash","-c","sudo systemctl start shairport-sync" ).start();
 
-                this.playCompleted.set(true);
+                this.playCompleted.compareAndSet(false, true);
 
-            } catch (IOException e) {
-                e.printStackTrace();
+            } catch (IOException ex) {
+                LOG.error("Could no restart audio services", ex);
             }
 
-            System.out.println("Playback completed.");
+            LOG.info("Playback completed.");
         }
 
     }
