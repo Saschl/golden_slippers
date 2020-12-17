@@ -1,25 +1,13 @@
 package de.schwemmi.music;
 
-import io.flic.fliclib.javaclient.Bdaddr;
-import io.flic.fliclib.javaclient.ButtonConnectionChannel;
-import io.flic.fliclib.javaclient.FlicClient;
-import io.flic.fliclib.javaclient.GeneralCallbacks;
-import io.flic.fliclib.javaclient.GetInfoResponseCallback;
-import io.flic.fliclib.javaclient.enums.BdAddrType;
-import io.flic.fliclib.javaclient.enums.BluetoothControllerState;
-import io.flic.fliclib.javaclient.enums.ClickType;
-import io.flic.fliclib.javaclient.enums.ConnectionStatus;
-import io.flic.fliclib.javaclient.enums.CreateConnectionChannelError;
-import io.flic.fliclib.javaclient.enums.DisconnectReason;
-import io.flic.fliclib.javaclient.enums.RemovedReason;
+import io.flic.fliclib.javaclient.*;
+import io.flic.fliclib.javaclient.enums.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.IOException;
-import java.util.Random;
-import java.util.UUID;
 
 @Component
 public class ButtonPlayer {
@@ -27,10 +15,10 @@ public class ButtonPlayer {
     @Value("${client.search:false}")
     private Boolean shouldSearch;
 
+
     private FlicClient client;
     private final NewDiscoveryClient connectionClient;
     private final SchlusibengPlayer player;
-    private final Random slipperRandom;
 
     public ButtonPlayer(NewDiscoveryClient connectionClient, SchlusibengPlayer player) {
         this.connectionClient = connectionClient;
@@ -40,7 +28,6 @@ public class ButtonPlayer {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        this.slipperRandom = new Random();
 
     }
 
@@ -116,12 +103,13 @@ public class ButtonPlayer {
 
         @Override
         public void onButtonUpOrDown(ButtonConnectionChannel channel, ClickType clickType, boolean wasQueued, int timeDiff) {
-            if (clickType.equals(ClickType.ButtonDown) && player.isPlayCompleted()) {
-                int nextSlipper = slipperRandom.nextInt(2);
-                player.play("/home/pi/slippers_"+nextSlipper+".wav");
+            if (clickType.equals(ClickType.ButtonDown) && !wasQueued) {
+                if (!player.isPlayCompleted()) {
+                    player.stop();
+                } else {
+                    player.play("");
+                }
             }
         }
     };
-
-
 }

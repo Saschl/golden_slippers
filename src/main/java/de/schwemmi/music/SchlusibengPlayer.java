@@ -2,24 +2,16 @@ package de.schwemmi.music;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.PreDestroy;
-import javax.sound.sampled.AudioFormat;
-import javax.sound.sampled.AudioInputStream;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.Clip;
-import javax.sound.sampled.DataLine;
-import javax.sound.sampled.LineEvent;
-import javax.sound.sampled.LineListener;
-import javax.sound.sampled.LineUnavailableException;
-import javax.sound.sampled.UnsupportedAudioFileException;
+import javax.sound.sampled.*;
 import java.io.File;
 import java.io.IOException;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
@@ -32,21 +24,37 @@ public class SchlusibengPlayer implements LineListener {
      */
     AtomicBoolean playCompleted = new AtomicBoolean(true);
 
+    private final Random slipperRandom;
+
     private Clip audioClip;
+    private AtomicBoolean isRestart = new AtomicBoolean(false);
+    @Value("${client.slippers:3}")
+    private Integer slipperVariants;
+
+
+    public SchlusibengPlayer() {
+        this.slipperRandom = new Random();
+    }
+
 
     /**
      * Play a given audio file.
+     *
      * @param audioFilePath Path of the audio file.
      */
     @GetMapping("/play")
     public void play(@RequestParam("fileName") String audioFilePath) {
+        if (audioFilePath == null || audioFilePath.isEmpty()) {
+            int nextSlipper = slipperRandom.nextInt(slipperVariants);
+            audioFilePath = "/home/pi/slippers_" + nextSlipper + ".wav";
+        }
         File audioFile = new File(audioFilePath);
 
         try {
 
             this.playCompleted.set(false);
-            new ProcessBuilder( "/bin/bash","-c","sudo systemctl stop bluealsa-aplay" ).start();
-            new ProcessBuilder( "/bin/bash","-c","sudo systemctl stop shairport-sync" ).start();
+            new ProcessBuilder("/bin/bash", "-c", "sudo systemctl stop bluealsa-aplay").start();
+            new ProcessBuilder("/bin/bash", "-c", "sudo systemctl stop shairport-sync").start();
 
             AudioInputStream audioStream = AudioSystem.getAudioInputStream(audioFile);
             AudioFormat format = audioStream.getFormat();
@@ -68,18 +76,24 @@ public class SchlusibengPlayer implements LineListener {
             audioClip.stop();
             this.playCompleted.compareAndSet(false, true);
         } catch (IOException ex) {
-            LOG.error("Error playing the audio file.",ex);
+            LOG.error("Error playing the audio file.", ex);
             audioClip.stop();
             this.playCompleted.compareAndSet(false, true);
         }
 
     }
 
+    @GetMapping("/restart")
+    public void stop() {
+        audioClip.stop();
+        this.isRestart.compareAndSet(false, true);
+    }
+
     @PreDestroy
     public void turnOnAudioAgain() {
         try {
-            new ProcessBuilder( "/bin/bash","-c","sudo systemctl start bluealsa-aplay" ).start();
-            new ProcessBuilder( "/bin/bash","-c","sudo systemctl start shairport-sync" ).start();
+            new ProcessBuilder("/bin/bash", "-c", "sudo systemctl start bluealsa-aplay").start();
+            new ProcessBuilder("/bin/bash", "-c", "sudo systemctl start shairport-sync").start();
         } catch (IOException ex) {
             LOG.error("Could no restart audio services", ex);
         }
@@ -100,10 +114,13 @@ public class SchlusibengPlayer implements LineListener {
         } else if (type == LineEvent.Type.STOP) {
             audioClip.close();
             try {
-                new ProcessBuilder( "/bin/bash","-c","sudo systemctl start bluealsa-aplay" ).start();
-                new ProcessBuilder( "/bin/bash","-c","sudo systemctl start shairport-sync" ).start();
+                new ProcessBuilder("/bin/bash", "-c", "sudo systemctl start bluealsa-aplay").start();
+                new ProcessBuilder("/bin/bash", "-c", "sudo systemctl start shairport-sync").start();
 
                 this.playCompleted.compareAndSet(false, true);
+                if (this.isRestart.compareAndSet(true, false)) {
+                    play("");
+                }
 
             } catch (IOException ex) {
                 LOG.error("Could no restart audio services", ex);

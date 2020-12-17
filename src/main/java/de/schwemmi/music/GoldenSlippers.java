@@ -6,7 +6,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class GoldenSlippers {
 
-
     public static void main(String... args) {
         SpringApplication.run(GoldenSlippers.class, args);
     }
