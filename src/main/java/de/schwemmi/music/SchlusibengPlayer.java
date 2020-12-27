@@ -11,6 +11,9 @@ import javax.annotation.PreDestroy;
 import javax.sound.sampled.*;
 import java.io.File;
 import java.io.IOException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -25,17 +28,56 @@ public class SchlusibengPlayer implements LineListener {
     AtomicBoolean playCompleted = new AtomicBoolean(true);
 
     private final Random slipperRandom;
+    private LocalDateTime lastPlay = null;
 
     private Clip audioClip;
     private AtomicBoolean isRestart = new AtomicBoolean(false);
     @Value("${client.slippers:3}")
-    private Integer slipperVariants;
+    private Integer slipperVariants=3;
+
+    private final String[] slippersFiles = new String[40];
+
+    public static final String BASE_PATH = "C:/Users/sasch/";
 
 
     public SchlusibengPlayer() {
         this.slipperRandom = new Random();
+        slippersFiles[0] = "slippers_2.wav";
+        slippersFiles[1] = "slippers_2.wav";
+        slippersFiles[2] = "slippers_2.wav";
+        for(int i = 3; i < 20; i++) {
+            slippersFiles[i] = "slippers_0.wav";
+        }
+        for(int i = 20; i < 37; i++) {
+            slippersFiles[i] = "slippers_1.wav";
+        }
+        for(int i = 37; i < 40; i++) {
+            slippersFiles[i] = "slippers_3.wav";
+        }
     }
 
+    public synchronized void markSongStart() {
+        this.playCompleted.set(false);
+    }
+
+    public synchronized void markSongEnd() {
+        this.playCompleted.compareAndSet(false, true);
+        this.lastPlay = LocalDateTime.now();
+    }
+    public boolean isTimeOutElapsed() {
+        return this.lastPlay == null|| this.lastPlay.plus(10, ChronoUnit.MINUTES).isBefore(LocalDateTime.now());
+    }
+
+    private void stopAudioServices() {
+        // new ProcessBuilder("/bin/bash", "-c", "sudo systemctl stop bluealsa-aplay").start();
+        // new ProcessBuilder("/bin/bash", "-c", "sudo systemctl stop shairport-sync").start();
+    }
+
+    private void startAudioServices() {
+      //  new ProcessBuilder("/bin/bash", "-c", "sudo systemctl start bluealsa-aplay").start();
+       // new ProcessBuilder("/bin/bash", "-c", "sudo systemctl start shairport-sync").start();
+
+    }
 
     /**
      * Play a given audio file.
@@ -43,42 +85,52 @@ public class SchlusibengPlayer implements LineListener {
      * @param audioFilePath Path of the audio file.
      */
     @GetMapping("/play")
-    public void play(@RequestParam("fileName") String audioFilePath) {
-        if (audioFilePath == null || audioFilePath.isEmpty()) {
-            int nextSlipper = slipperRandom.nextInt(slipperVariants);
-            audioFilePath = "/home/pi/slippers_" + nextSlipper + ".wav";
-        }
-        File audioFile = new File(audioFilePath);
+    public void play(@RequestParam("fileName") String audioFilePath)  {
+        if(isTimeOutElapsed()) {
+            if (audioFilePath == null || audioFilePath.isEmpty()) {
+                int nextSlipper = slipperRandom.nextInt(slipperVariants*10);
+                String nextSlipperFile = slippersFiles[nextSlipper];
 
-        try {
+                audioFilePath = BASE_PATH+nextSlipperFile;
+            }
+            File audioFile = new File(audioFilePath);
 
-            this.playCompleted.set(false);
-            new ProcessBuilder("/bin/bash", "-c", "sudo systemctl stop bluealsa-aplay").start();
-            new ProcessBuilder("/bin/bash", "-c", "sudo systemctl stop shairport-sync").start();
+            try {
 
-            AudioInputStream audioStream = AudioSystem.getAudioInputStream(audioFile);
-            AudioFormat format = audioStream.getFormat();
-            DataLine.Info info = new DataLine.Info(Clip.class, format);
+                markSongStart();
 
-            audioClip = (Clip) AudioSystem.getLine(info);
-            audioClip.addLineListener(this);
-            audioClip.open(audioStream);
-            audioClip.start();
+                stopAudioServices();
 
-        } catch (UnsupportedAudioFileException ex) {
-            LOG.error("The specified audio file is not supported.",ex);
-            ex.printStackTrace();
-            audioClip.stop();
-            this.playCompleted.compareAndSet(false, true);
-        } catch (LineUnavailableException ex) {
-            LOG.error("Audio line for playing back is unavailable.",ex);
-            ex.printStackTrace();
-            audioClip.stop();
-            this.playCompleted.compareAndSet(false, true);
-        } catch (IOException ex) {
-            LOG.error("Error playing the audio file.", ex);
-            audioClip.stop();
-            this.playCompleted.compareAndSet(false, true);
+
+
+                // actual song
+                AudioInputStream audioStream = AudioSystem.getAudioInputStream(audioFile);
+                AudioFormat format = audioStream.getFormat();
+                DataLine.Info info = new DataLine.Info(Clip.class, format);
+
+                audioClip = (Clip) AudioSystem.getLine(info);
+                audioClip.addLineListener(this);
+
+                audioClip.open(audioStream);
+                audioClip.start();
+
+            } catch (UnsupportedAudioFileException ex) {
+                LOG.error("The specified audio file is not supported.", ex);
+                ex.printStackTrace();
+                audioClip.stop();
+                this.playCompleted.compareAndSet(false, true);
+            } catch (LineUnavailableException ex) {
+                LOG.error("Audio line for playing back is unavailable.", ex);
+                ex.printStackTrace();
+                audioClip.stop();
+                this.playCompleted.compareAndSet(false, true);
+            } catch (IOException ex) {
+                LOG.error("Error playing the audio file.", ex);
+                audioClip.stop();
+                this.playCompleted.compareAndSet(false, true);
+            }
+        } else {
+            startAudioServices();
         }
 
     }
@@ -86,18 +138,12 @@ public class SchlusibengPlayer implements LineListener {
     @GetMapping("/restart")
     public void stop() {
         audioClip.stop();
-        this.isRestart.compareAndSet(false, true);
+        //this.isRestart.compareAndSet(false, true);
     }
 
     @PreDestroy
     public void turnOnAudioAgain() {
-        try {
-            new ProcessBuilder("/bin/bash", "-c", "sudo systemctl start bluealsa-aplay").start();
-            new ProcessBuilder("/bin/bash", "-c", "sudo systemctl start shairport-sync").start();
-        } catch (IOException ex) {
-            LOG.error("Could no restart audio services", ex);
-        }
-
+       startAudioServices();
     }
 
 
@@ -113,18 +159,12 @@ public class SchlusibengPlayer implements LineListener {
 
         } else if (type == LineEvent.Type.STOP) {
             audioClip.close();
-            try {
-                new ProcessBuilder("/bin/bash", "-c", "sudo systemctl start bluealsa-aplay").start();
-                new ProcessBuilder("/bin/bash", "-c", "sudo systemctl start shairport-sync").start();
 
-                this.playCompleted.compareAndSet(false, true);
-                if (this.isRestart.compareAndSet(true, false)) {
-                    play("");
-                }
+               startAudioServices();
 
-            } catch (IOException ex) {
-                LOG.error("Could no restart audio services", ex);
-            }
+
+                markSongEnd();
+
 
             LOG.info("Playback completed.");
         }

@@ -19,10 +19,12 @@ public class ButtonPlayer {
     private FlicClient client;
     private final NewDiscoveryClient connectionClient;
     private final SchlusibengPlayer player;
+    private AlarmPlayer alarmPlayer;
 
-    public ButtonPlayer(NewDiscoveryClient connectionClient, SchlusibengPlayer player) {
+    public ButtonPlayer(NewDiscoveryClient connectionClient, SchlusibengPlayer player, AlarmPlayer alarmPlayer) {
         this.connectionClient = connectionClient;
         this.player = player;
+        this.alarmPlayer = alarmPlayer;
         try {
             client = new FlicClient("localhost");
         } catch (IOException e) {
@@ -67,7 +69,7 @@ public class ButtonPlayer {
             if (shouldSearch != null && shouldSearch) {
                 connectionClient.discover();
             }
-            this.startActions();
+          //  this.startActions();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -106,8 +108,9 @@ public class ButtonPlayer {
             if (clickType.equals(ClickType.ButtonDown) && !wasQueued) {
                 if (!player.isPlayCompleted()) {
                     player.stop();
+                    player.markSongEnd();
                 } else {
-                    player.play("");
+                    alarmPlayer.playAlarmAndThenSong();
                 }
             }
         }
